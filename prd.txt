@@ -1,0 +1,80 @@
+Product Requirements Document: AM Auditor Pro
+Version: 1.0
+Date: June 11, 2025
+Author: [Your Name/Team]
+Status: Draft
+
+1. Introduction
+1.1 Problem Statement
+Account Management (AM) Team Leads currently spend a significant amount of time manually auditing conversations across disparate platforms (calls, chat logs, meeting recordings). This process is not only inefficient but also inherently subjective, leading to inconsistent feedback and performance evaluations. AMs lack a clear, data-driven understanding of what "good" looks like and how to improve specific skills. This inconsistency hinders effective coaching, impacts team morale, and creates a risk of missing key performance indicators (KPIs) related to customer retention and revenue growth.
+
+1.2 Proposed Solution
+"AM Auditor Pro" is a web-based application designed to solve this problem. It leverages a powerful Large Language Model (LLM), Gemini, to automate the analysis and scoring of AM conversations. Users can upload conversation files in any format (audio, video, text, image), and the tool will provide a consistent, objective, and actionable audit report presented in a modern, dashboard-style interface. This will free up leadership resources and empower AMs with clear, data-driven feedback for targeted development.
+
+2. Product Goals & Objectives
+2.1 Business Goals
+Improve overall AM team performance and skill consistency.
+Increase key business metrics: Customer Retention Rate and Net Revenue Retention (NRR).
+Enhance coaching effectiveness and create a scalable quality assurance process.
+2.2 Product Goals
+For Team Leads: Drastically reduce the time and effort required for manual conversation audits.
+For AMs: Provide transparent, objective, and actionable feedback to foster skill development and career growth.
+For the System: Deliver highly accurate, consistent, and fast analysis based on a detailed, standardized rubric.
+2.3 Success Metrics
+Adoption & Engagement:
+Number of conversations audited per week/month.
+Weekly Active Users (WAU).
+Performance Impact:
+Track the average team score improvement quarter-over-quarter.
+Correlation between high scores and positive business outcomes (e.g., successful upsells, renewals).
+Efficiency & Satisfaction:
+Reduction in self-reported time spent on audits by Team Leads.
+User satisfaction score (NPS or similar survey) for the tool.
+3. User Personas
+Primary: Alex, the AM Team Lead
+
+Needs: To quickly assess the quality of dozens of conversations per week, identify coaching opportunities, provide consistent feedback across the team, and report on team performance with data.
+Pain Points: "I spend my entire Friday listening to calls." "It's hard to be fair and consistent with every review." "I know Brenda is struggling, but I can't pinpoint the exact skill to coach her on."
+Secondary: Brenda, the Account Manager
+
+Needs: To understand exactly what is expected of her in client conversations, receive clear and fair feedback, and know what specific actions to take to improve her skills and meet her targets.
+Pain Points: "My manager's feedback feels subjective sometimes." "I want to get better at handling price objections, but I'm not sure how." "I'd love to review my own calls against a clear standard."
+4. Features & Requirements
+4.1 Epic: File Upload & Processing
+User Story 1: As a user, I can upload a conversation file via a simple drag-and-drop interface or a file selection button.
+User Story 2: As a user, I can upload common file formats, including audio (.mp3, .wav), video (.mp4), documents (.pdf, .docx), and images (.png, .jpg).
+User Story 3: As a user, I can see a visual indicator showing that my file is being uploaded and processed, so I know the system is working.
+User Story 4: As a developer, I can securely store and access the Gemini API key via environment variables, ensuring it is never hardcoded.
+4.2 Epic: Conversation Analysis Engine
+User Story 5: As the system, I can automatically extract a text transcript from any supported file type, using STT for audio/video and OCR for images.
+User Story 6: As the system, I can accurately process transcripts containing mixed languages (English, Malay, Mandarin, Cantonese).
+User Story 7: As the system, I can analyze the transcript to identify the conversation's primary Type (Consultation/Pitch, Service, or Mixed) and Subject (e.g., "KDS Pitch," "Warranty Issue").
+User Story 8: As the system, I can dynamically apply the detailed scoring rubric (provided via PDF) to score the transcript against all relevant behaviors.
+4.3 Epic: Results Dashboard & Reporting
+User Story 9: As a user, I can view the complete audit results for a conversation on a single, dedicated web page.
+User Story 10: As a user, I can immediately see the at-a-glance summary, including the Conversation Type, Subject, a visual gauge chart for the Total Score (%), and a clear Pass/Fail status.
+User Story 11: As a user, I can read a concise written summary of key strengths and areas for improvement, along with a concrete action plan.
+User Story 12: As a user, I can view a detailed, interactive table of all scored items, including the score, justification, and specific conversational samples as evidence.
+User Story 13: As a user, for any scored item that is below a "4," I can see specific guidance in the table on how to improve, complete with a sample script.
+5. Design & User Experience (UX)
+The application must be modern, clean, and intuitive. The results page will be structured in three main sections:
+
+At-a-Glance Summary: A top-level section with the most critical takeaways. It will feature a large donut or gauge chart for the Total Score and a color-coded Pass/Fail badge for instant assessment.
+Key Insights & Action Plan: A section designed for quick comprehension, using cards to display the summarized feedback and a collapsible accordion for the detailed action plan.
+Detailed Breakdown: A deep-dive section featuring a bar chart for performance by category and the main interactive scorecard table. The table will use subtle conditional formatting (e.g., color-coding rows by score) and interactive elements (e.g., expandable modals for evidence) to enhance usability.
+6. Technical Requirements & Stack
+Frontend: A modern JavaScript framework like React or Vue.js for building a dynamic and responsive UI.
+Backend: A Python framework like FastAPI or Flask to handle API requests, business logic, and orchestrate the analysis pipeline.
+LLM API: Google's Gemini API, accessed via the google-generativeai Python library.
+Transcript Processing:
+STT: Google Cloud Speech-to-Text, AssemblyAI, or OpenAI Whisper.
+OCR: Tesseract or Google Cloud Vision.
+Asynchronous Processing: Celery with Redis to manage long-running transcription and analysis tasks without blocking the user interface.
+Data Visualization: Chart.js or Recharts for rendering dashboard charts.
+Deployment: The application will be containerized using Docker and deployed on a cloud platform (e.g., GCP, AWS).
+7. Future Considerations (Post-MVP Roadmap)
+User Management & Roles: Introduce user accounts with distinct roles (Admin, Team Lead, AM).
+Historical Performance Tracking: A dashboard to view an AM's progress and score trends over time.
+Team-Level Analytics: Aggregate data to identify team-wide strengths and common areas for improvement.
+Direct Call System Integration: API integration with platforms like Aircall to automatically pull in call recordings for analysis.
+Manager Override & Calibration Feature: Allow managers to manually adjust AI-generated scores and leave comments to help calibrate the system over time.
