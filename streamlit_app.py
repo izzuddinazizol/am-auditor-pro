@@ -8,6 +8,7 @@ from docx import Document
 import re
 import PyPDF2
 from datetime import datetime
+from io import BytesIO
 
 # Page configuration
 st.set_page_config(
@@ -214,100 +215,225 @@ class AnalysisService:
         return cleaned if cleaned else "Not identified"
     
     async def analyze_conversation(self, transcript: str) -> Dict[str, Any]:
-        business_name, customer_name, agent_name = self._extract_names(transcript)
+        """
+        3-Step AI Analysis Process:
+        1. Extract participant info and conversation basics
+        2. Strict rubric-based evaluation with merciless standards
+        3. Elite success manager coaching with specific action plans
+        """
         
-        # Content analysis
-        transcript_lower = transcript.lower()
-        has_greeting = any(word in transcript_lower for word in ['hello', 'hi', 'good morning', 'thanks'])
-        has_profanity = any(word in transcript_lower for word in ['damn', 'shit', 'stupid'])
-        has_service = any(word in transcript_lower for word in ['problem', 'issue', 'help', 'support'])
-        has_sales = any(word in transcript_lower for word in ['product', 'offer', 'solution'])
-        has_questions = '?' in transcript
-        
-        scored_items = []
-        
-        # Rapport Building
-        if has_profanity:
-            rapport_score = 1
-            rapport_justification = "TERMINATION CANDIDATE: Unprofessional language detected."
-        elif has_greeting:
-            rapport_score = 3
-            rapport_justification = "MEDIOCRE: Basic greeting present but lacks sophistication."
-        else:
-            rapport_score = 2
-            rapport_justification = "CONCERNING: Weak rapport establishment."
-        
-        scored_items.append(ScoredItem(
-            category="Core Communication Fundamentals",
-            item="Rapport Building & Sincerity",
-            score=rapport_score,
-            justification=rapport_justification,
-            evidence=["Greeting detected" if has_greeting else "No proper greeting"],
-            improvement_guidance="Use warm, courteous language and show genuine concern."
-        ))
-        
-        # Active Listening
-        listening_score = 4 if has_questions else 2
-        scored_items.append(ScoredItem(
-            category="Core Communication Fundamentals",
-            item="Active Listening",
-            score=listening_score,
-            justification="SOLID: Questions present." if has_questions else "POOR: No evidence of listening.",
-            evidence=["Questions found" if has_questions else "No clarifying questions"],
-            improvement_guidance="Ask clarifying questions and paraphrase concerns."
-        ))
-        
-        # Professional Communication
-        if has_profanity:
-            prof_score = 1
-            prof_justification = "TERMINATION: Profanity unacceptable."
-        elif has_greeting and has_questions:
-            prof_score = 4
-            prof_justification = "SOLID: Professional standards maintained."
-        else:
-            prof_score = 2
-            prof_justification = "CONCERNING: Basic professionalism only."
-        
-        scored_items.append(ScoredItem(
-            category="Core Communication Fundamentals",
-            item="Professional Communication",
-            score=prof_score,
-            justification=prof_justification,
-            evidence=["Professional tone maintained" if prof_score >= 3 else "Issues detected"],
-            improvement_guidance="Maintain professional tone and courteous language."
-        ))
-        
-        # Conversation type
-        if has_service and has_sales:
-            conv_type = "mixed"
-            subject = f"{business_name} - Mixed - Support & Sales"
-        elif has_service:
-            conv_type = "servicing"
-            subject = f"{business_name} - Servicing - Issue Resolution"
-        else:
-            conv_type = "consultation"
-            subject = f"{business_name} - Consultation - Product Discussion"
-        
-        total_score = round(sum(item.score for item in scored_items) / len(scored_items) * 20)
-        
-        return {
-            "participant_info": {
+        # STEP 1: Extract Participant Info and Conversation Basics
+        extraction_prompt = f"""
+You are an expert conversation analyst. Analyze this transcript and extract key information.
+
+TRANSCRIPT:
+{transcript}
+
+Extract the following information in JSON format:
+{{
+    "business_name": "Customer's business name (NEVER StoreHub)",
+    "customer_name": "Customer's name",
+    "agent_name": "Account manager/agent name",
+    "conversation_type": "consultation/servicing/mixed",
+    "main_theme": "Main topic in exactly 5 words or less"
+}}
+
+RULES:
+- Business name should be the CUSTOMER'S business, never StoreHub
+- Conversation type: consultation (sales/product discussion), servicing (support/issues), mixed (both)
+- Main theme: capture the core purpose in 5 words maximum
+- Use "Not identified" if information cannot be found
+- Be precise and accurate
+
+Respond with ONLY the JSON, no other text.
+"""
+
+        try:
+            if self.model:
+                # Get participant info from Gemini
+                response = self.model.generate_content(extraction_prompt)
+                participant_data = json.loads(response.text.strip())
+            else:
+                raise Exception("Gemini model not available")
+        except Exception as e:
+            st.warning(f"Using local extraction (Gemini unavailable): {str(e)}")
+            # Fallback to local extraction if Gemini fails
+            business_name, customer_name, agent_name = self._extract_names(transcript)
+            participant_data = {
                 "business_name": business_name,
-                "customer_name": customer_name,
-                "agent_name": agent_name
+                "customer_name": customer_name, 
+                "agent_name": agent_name,
+                "conversation_type": "consultation",
+                "main_theme": "General discussion"
+            }
+
+        # STEP 2: Strict Rubric-Based Evaluation
+        evaluation_prompt = f"""
+You are Dr. Victoria "The Decimator" Harrington, the most ruthless conversation analyst in the industry. You have ZERO TOLERANCE for mediocrity.
+
+CONVERSATION TRANSCRIPT:
+{transcript}
+
+EVALUATION RUBRIC - Score each item 1-5 (5=PERFECTION, 4=BARELY ACCEPTABLE, 3=MEDIOCRE, 2=CONCERNING, 1=TERMINATION CANDIDATE):
+
+**Core Communication Fundamentals:**
+1. Rapport Building & Sincerity - Building genuine connection and trust
+2. Active Listening - Demonstrating understanding and engagement  
+3. Professional Communication - Maintaining appropriate tone and language
+
+**Solution-Oriented Approach:**
+4. Problem Identification - Accurately identifying customer needs/issues
+5. Solution Presentation - Clearly explaining solutions and benefits
+6. Objection Handling - Addressing concerns professionally
+
+**Customer Experience Excellence:**
+7. Empathy & Understanding - Showing genuine care for customer situation
+8. Responsiveness - Timely and relevant responses to customer needs
+9. Follow-up & Commitment - Ensuring customer satisfaction and next steps
+
+CRITICAL RULE: If ANY unprofessional or rude language is detected, immediately score 1 across ALL rubrics.
+
+Provide your analysis in this JSON format:
+{{
+    "overall_score": 0-100,
+    "pass_status": true/false,
+    "scored_items": [
+        {{
+            "category": "Category name",
+            "item": "Item name", 
+            "score": 1-5,
+            "justification": "Your brutal assessment",
+            "evidence": ["Specific quotes from transcript"],
+            "improvement_guidance": "What needs to be fixed"
+        }}
+    ],
+    "key_strengths": ["List strengths if score ≥4"],
+    "areas_for_improvement": ["List critical weaknesses"],
+    "brutal_assessment": "Your merciless overall judgment"
+}}
+
+Be RUTHLESS. Demand EXCELLENCE. Show NO MERCY for substandard performance.
+"""
+
+        # Get evaluation from Gemini
+        try:
+            if self.model:
+                eval_response = self.model.generate_content(evaluation_prompt)
+                evaluation_data = json.loads(eval_response.text.strip())
+            else:
+                raise Exception("Gemini model not available")
+        except Exception as e:
+            st.warning(f"Using basic evaluation (Gemini unavailable): {str(e)}")
+            # Fallback evaluation
+            evaluation_data = {
+                "overall_score": 60,
+                "pass_status": False,
+                "scored_items": [
+                    {
+                        "category": "Core Communication Fundamentals",
+                        "item": "Basic Assessment",
+                        "score": 3,
+                        "justification": "Basic analysis performed - Gemini AI unavailable",
+                        "evidence": ["Transcript processed"],
+                        "improvement_guidance": "Full AI analysis requires Gemini API key"
+                    }
+                ],
+                "key_strengths": ["Conversation completed"],
+                "areas_for_improvement": ["Enable full AI analysis"],
+                "brutal_assessment": "Basic analysis - Enable Gemini AI for full assessment"
+            }
+
+        # STEP 3: Elite Success Manager Coaching
+        coaching_prompt = f"""
+You are now the world's #1 Chief Success Officer and elite success manager trainer. You drive revenue and deliver world-class customer experiences.
+
+CONVERSATION ANALYSIS:
+- Business: {participant_data['business_name']}
+- Customer: {participant_data['customer_name']}  
+- Agent: {participant_data['agent_name']}
+- Type: {participant_data['conversation_type']}
+- Theme: {participant_data['main_theme']}
+
+EVALUATION RESULTS:
+{json.dumps(evaluation_data, indent=2)}
+
+TRANSCRIPT:
+{transcript}
+
+For any items scored <4, provide SPECIFIC, ACTIONABLE coaching:
+
+Create detailed action plans in JSON format:
+{{
+    "coaching_summary": "Your expert coaching assessment",
+    "specific_action_plans": [
+        {{
+            "area": "Area needing improvement",
+            "current_issue": "What went wrong",
+            "specific_actions": [
+                "Specific action 1",
+                "Specific action 2", 
+                "Specific action 3"
+            ],
+            "practice_scripts": ["Example phrases to use"],
+            "success_metrics": "How to measure improvement"
+        }}
+    ],
+    "immediate_priorities": ["Top 3 things to fix immediately"],
+    "long_term_development": ["Strategic improvements for sustained success"]
+}}
+
+Be SPECIFIC. Provide EXACT phrases, CONCRETE examples, and MEASURABLE outcomes.
+Focus on revenue impact and customer experience excellence.
+"""
+
+        # Get coaching from Gemini
+        try:
+            if self.model:
+                coaching_response = self.model.generate_content(coaching_prompt)
+                coaching_data = json.loads(coaching_response.text.strip())
+            else:
+                raise Exception("Gemini model not available")
+        except Exception as e:
+            st.warning(f"Using basic coaching (Gemini unavailable): {str(e)}")
+            # Fallback coaching
+            coaching_data = {
+                "coaching_summary": "Basic coaching - Full AI coaching requires Gemini API key",
+                "specific_action_plans": [],
+                "immediate_priorities": ["Enable Gemini AI for detailed coaching"],
+                "long_term_development": ["Integrate full AI analysis capabilities"]
+            }
+
+        # Combine all results
+        final_results = {
+            "participant_info": {
+                "business_name": participant_data.get("business_name", "Not identified"),
+                "customer_name": participant_data.get("customer_name", "Not identified"),
+                "agent_name": participant_data.get("agent_name", "Not identified")
             },
             "summary": {
-                "conversation_type": conv_type,
-                "subject": subject,
-                "total_score": total_score,
-                "pass_status": total_score >= 80,
-                "key_strengths": ["Professional communication"] if prof_score >= 3 else [],
-                "areas_for_improvement": ["Improve rapport building", "Enhance active listening"],
-                "action_plan": ["Practice warm greetings", "Ask more questions", "Show empathy"]
+                "conversation_type": participant_data.get("conversation_type", "consultation"),
+                "subject": f"{participant_data.get('business_name', 'Unknown')} - {participant_data.get('conversation_type', 'consultation').title()} - {participant_data.get('main_theme', 'Discussion')}",
+                "total_score": evaluation_data.get("overall_score", 0),
+                "pass_status": evaluation_data.get("pass_status", False),
+                "key_strengths": evaluation_data.get("key_strengths", []),
+                "areas_for_improvement": evaluation_data.get("areas_for_improvement", []),
+                "action_plan": coaching_data.get("immediate_priorities", [])
             },
-            "scored_items": scored_items,
-            "coaching_summary": f"Dr. Harrington's Assessment: Score {total_score}/100. {'ACCEPTABLE performance but room for improvement' if total_score >= 60 else 'NEEDS IMMEDIATE IMPROVEMENT'}. Focus on building stronger client relationships and demonstrating active listening."
+            "scored_items": [
+                ScoredItem(
+                    category=item.get("category", "Unknown"),
+                    item=item.get("item", "Unknown"),
+                    score=item.get("score", 1),
+                    justification=item.get("justification", "No assessment"),
+                    evidence=item.get("evidence", []),
+                    improvement_guidance=item.get("improvement_guidance", "")
+                ) for item in evaluation_data.get("scored_items", [])
+            ],
+            "coaching_summary": evaluation_data.get("brutal_assessment", "Analysis completed"),
+            "detailed_coaching": coaching_data
         }
+
+        return final_results
 
 @st.cache_resource
 def get_analysis_service():
@@ -477,6 +603,47 @@ def main():
         # Assessment
         st.subheader("💬 Dr. Harrington's Assessment")
         st.error(results['coaching_summary'])
+        
+        # Elite Success Manager Coaching
+        if 'detailed_coaching' in results and results['detailed_coaching']:
+            st.subheader("🏆 Elite Success Manager Coaching")
+            coaching = results['detailed_coaching']
+            
+            # Coaching Summary
+            if 'coaching_summary' in coaching:
+                st.info(f"**Expert Assessment:** {coaching['coaching_summary']}")
+            
+            # Specific Action Plans
+            if 'specific_action_plans' in coaching and coaching['specific_action_plans']:
+                st.markdown("### 🎯 Detailed Action Plans")
+                for i, plan in enumerate(coaching['specific_action_plans'], 1):
+                    with st.expander(f"Action Plan {i}: {plan.get('area', 'Improvement Area')}"):
+                        st.markdown(f"**Current Issue:** {plan.get('current_issue', 'Not specified')}")
+                        
+                        if 'specific_actions' in plan and plan['specific_actions']:
+                            st.markdown("**Specific Actions:**")
+                            for j, action in enumerate(plan['specific_actions'], 1):
+                                st.markdown(f"{j}. {action}")
+                        
+                        if 'practice_scripts' in plan and plan['practice_scripts']:
+                            st.markdown("**Practice Scripts:**")
+                            for script in plan['practice_scripts']:
+                                st.code(script, language=None)
+                        
+                        if 'success_metrics' in plan:
+                            st.markdown(f"**Success Metrics:** {plan['success_metrics']}")
+            
+            # Immediate Priorities
+            if 'immediate_priorities' in coaching and coaching['immediate_priorities']:
+                st.markdown("### 🚨 Immediate Priorities")
+                for i, priority in enumerate(coaching['immediate_priorities'], 1):
+                    st.error(f"{i}. {priority}")
+            
+            # Long-term Development
+            if 'long_term_development' in coaching and coaching['long_term_development']:
+                st.markdown("### 📈 Long-term Development")
+                for i, development in enumerate(coaching['long_term_development'], 1):
+                    st.success(f"{i}. {development}")
         
         # Transcript
         with st.expander("📄 View Transcript"):
