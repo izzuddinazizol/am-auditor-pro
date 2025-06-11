@@ -87,48 +87,60 @@ class AnalysisService:
         
         # Enhanced patterns for Call Transcript headers
         for line in lines[:10]:
-            # Pattern 1: "Call Transcript: Name (Role) & Name (Role)"
-            header_match = re.search(
-                r'Call Transcript:\s*([A-Za-z\s]+)\s*\([^)]*(?:Manager|Agent|Representative)[^)]*\)\s*[&]\s*([A-Za-z\s]+)(?:\s*\([^)]*(?:Merchant|Customer|Client)[^)]*\))?',
-                line, re.IGNORECASE
-            )
-            if header_match:
-                agent_name = header_match.group(1).strip()
-                customer_name = header_match.group(2).strip()
-                break
-            
-            # Pattern 2: "Call Transcript: Name & Name"
-            simple_header = re.search(r'Call Transcript:\s*([A-Za-z\s]+)\s*&\s*([A-Za-z\s]+)', line, re.IGNORECASE)
-            if simple_header:
-                agent_name = simple_header.group(1).strip()
-                customer_name = simple_header.group(2).strip()
-                break
-        
-        # Extract business name from conversation content
-        business_patterns = [
-            # "I'm calling from [Business Name]"
-            r"(?:calling|speaking|I'm)\s+from\s+([A-Za-z][A-Za-z\s]{2,20})",
-            # "This is [Name] from [Business Name]"
-            r"This is .+ from\s+([A-Za-z][A-Za-z\s]{2,20})",
-            # "representing [Business Name]"
-            r"representing\s+([A-Za-z][A-Za-z\s]{2,20})",
-            # Direct business mention patterns
-            r"at\s+([A-Za-z][A-Za-z\s]{2,20})(?:\s+(?:shop|store|business|company|restaurant|cafe))?",
-        ]
-        
-        for line in lines[:15]:
-            for pattern in business_patterns:
-                match = re.search(pattern, line, re.IGNORECASE)
-                if match:
-                    potential_business = match.group(1).strip()
-                    
-                    # Validate business name
+            # Pattern 1: "Call Transcript: Name (Role) & Name (Role, owner of Business)"
+            if "Call Transcript:" in line:
+                # Extract business name from "owner of [Business Name]" pattern
+                owner_match = re.search(r'owner of ([A-Za-z][A-Za-z\s]{2,25})', line, re.IGNORECASE)
+                if owner_match:
+                    potential_business = owner_match.group(1).strip()
                     if self._is_valid_business_name(potential_business):
                         business_name = potential_business
-                        break
+                
+                # Extract names from header
+                header_match = re.search(
+                    r'Call Transcript:\s*([A-Za-z\s]+)\s*\([^)]*(?:Manager|Agent|Representative)[^)]*\)\s*[&]\s*([A-Za-z\s]+)(?:\s*\([^)]*\))?',
+                    line, re.IGNORECASE
+                )
+                if header_match:
+                    agent_name = header_match.group(1).strip()
+                    customer_name = header_match.group(2).strip()
+                    break
+                
+                # Pattern 2: Simple header without roles
+                simple_header = re.search(r'Call Transcript:\s*([A-Za-z\s]+)\s*&\s*([A-Za-z\s]+)', line, re.IGNORECASE)
+                if simple_header:
+                    agent_name = simple_header.group(1).strip()
+                    customer_name = simple_header.group(2).strip()
+                    break
+        
+        # Extract business name from conversation content if not found in header
+        if business_name == "Not identified":
+            business_patterns = [
+                # "speaking with [Name] from [Business Name]"
+                r"speaking with .+ from\s+([A-Za-z][A-Za-z\s]{2,25})",
+                # "I'm calling from [Business Name]"
+                r"(?:calling|speaking|I'm)\s+from\s+([A-Za-z][A-Za-z\s]{2,20})",
+                # "This is [Name] from [Business Name]"
+                r"This is .+ from\s+([A-Za-z][A-Za-z\s]{2,20})",
+                # "representing [Business Name]"
+                r"representing\s+([A-Za-z][A-Za-z\s]{2,20})",
+                # "at [Business Name]" or "your [Business Name]"
+                r"(?:at|your)\s+([A-Za-z][A-Za-z\s]{2,20})(?:\s+(?:outlet|shop|store|business|restaurant|cafe))?",
+            ]
             
-            if business_name != "Not identified":
-                break
+            for line in lines[:15]:
+                for pattern in business_patterns:
+                    match = re.search(pattern, line, re.IGNORECASE)
+                    if match:
+                        potential_business = match.group(1).strip()
+                        
+                        # Validate business name
+                        if self._is_valid_business_name(potential_business):
+                            business_name = potential_business
+                            break
+                
+                if business_name != "Not identified":
+                    break
         
         # If no business name found from patterns, try to extract from speaker identification
         if business_name == "Not identified":
@@ -374,6 +386,20 @@ def main():
         # Analysis
         with st.spinner("🔍 Dr. Harrington is analyzing..."):
             analysis_service = get_analysis_service()
+            
+            # Debug: Show name extraction results
+            with st.expander("🔍 Debug: Name Extraction", expanded=False):
+                business, customer, agent = analysis_service._extract_names(transcript)
+                st.write(f"**Business**: {business}")
+                st.write(f"**Customer**: {customer}")
+                st.write(f"**Agent**: {agent}")
+                
+                # Show first 10 lines for debugging
+                lines = [line.strip() for line in transcript.split('\n') if line.strip()]
+                st.write("**First 10 lines of transcript:**")
+                for i, line in enumerate(lines[:10], 1):
+                    st.write(f"{i}. {line}")
+            
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             results = loop.run_until_complete(analysis_service.analyze_conversation(transcript))
