@@ -78,41 +78,128 @@ class AnalysisService:
             return ""
     
     def _extract_names(self, transcript: str) -> Tuple[str, str, str]:
+        """Extract business name, customer name, and agent name from transcript"""
         business_name = "Not identified"
         customer_name = "Not identified"
         agent_name = "Not identified"
         
         lines = [line.strip() for line in transcript.split('\n') if line.strip()]
         
-        for line in lines[:20]:
-            # Call transcript headers
-            if "Call Transcript:" in line:
-                pattern = re.search(r'(\w+)\s*\([^)]*(?:Manager|Agent)[^)]*\)\s*[&]\s*(\w+(?:\s+\w+)?)', line, re.IGNORECASE)
-                if pattern:
-                    agent_name = pattern.group(1).strip()
-                    customer_name = pattern.group(2).strip()
-                    break
+        # Enhanced patterns for Call Transcript headers
+        for line in lines[:10]:
+            # Pattern 1: "Call Transcript: Name (Role) & Name (Role)"
+            header_match = re.search(
+                r'Call Transcript:\s*([A-Za-z\s]+)\s*\([^)]*(?:Manager|Agent|Representative)[^)]*\)\s*[&]\s*([A-Za-z\s]+)(?:\s*\([^)]*(?:Merchant|Customer|Client)[^)]*\))?',
+                line, re.IGNORECASE
+            )
+            if header_match:
+                agent_name = header_match.group(1).strip()
+                customer_name = header_match.group(2).strip()
+                break
             
-            # Speaker patterns
-            speaker_match = re.match(r'^([A-Z][a-z]+):\s*(.+)', line)
-            if speaker_match:
-                speaker = speaker_match.group(1)
-                content = speaker_match.group(2)
-                
-                if any(phrase in content.lower() for phrase in ['account manager', 'storehub']):
-                    if agent_name == "Not identified":
-                        agent_name = speaker
-                
-                # Business name extraction
-                if "from " in line.lower():
-                    from_match = re.search(r'from\s+([A-Z][a-zA-Z]{3,15})', line)
-                    if from_match and business_name == "Not identified":
-                        potential = from_match.group(1)
-                        invalid = ['calling', 'speaking', 'storehub', 'store', 'hub']
-                        if potential.lower() not in invalid and len(potential) >= 4:
-                            business_name = potential
+            # Pattern 2: "Call Transcript: Name & Name"
+            simple_header = re.search(r'Call Transcript:\s*([A-Za-z\s]+)\s*&\s*([A-Za-z\s]+)', line, re.IGNORECASE)
+            if simple_header:
+                agent_name = simple_header.group(1).strip()
+                customer_name = simple_header.group(2).strip()
+                break
+        
+        # Extract business name from conversation content
+        business_patterns = [
+            # "I'm calling from [Business Name]"
+            r"(?:calling|speaking|I'm)\s+from\s+([A-Za-z][A-Za-z\s]{2,20})",
+            # "This is [Name] from [Business Name]"
+            r"This is .+ from\s+([A-Za-z][A-Za-z\s]{2,20})",
+            # "representing [Business Name]"
+            r"representing\s+([A-Za-z][A-Za-z\s]{2,20})",
+            # Direct business mention patterns
+            r"at\s+([A-Za-z][A-Za-z\s]{2,20})(?:\s+(?:shop|store|business|company|restaurant|cafe))?",
+        ]
+        
+        for line in lines[:15]:
+            for pattern in business_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    potential_business = match.group(1).strip()
+                    
+                    # Validate business name
+                    if self._is_valid_business_name(potential_business):
+                        business_name = potential_business
+                        break
+            
+            if business_name != "Not identified":
+                break
+        
+        # If no business name found from patterns, try to extract from speaker identification
+        if business_name == "Not identified":
+            for line in lines[:10]:
+                speaker_match = re.match(r'^([A-Za-z\s]+):\s*(.+)', line)
+                if speaker_match:
+                    speaker = speaker_match.group(1).strip()
+                    content = speaker_match.group(2).lower()
+                    
+                    # If speaker mentions being from somewhere
+                    if "from" in content:
+                        from_match = re.search(r'from\s+([A-Za-z][A-Za-z\s]{2,20})', content, re.IGNORECASE)
+                        if from_match:
+                            potential_business = from_match.group(1).strip()
+                            if self._is_valid_business_name(potential_business):
+                                business_name = potential_business
+                                break
+        
+        # Clean up names
+        business_name = self._clean_name(business_name)
+        customer_name = self._clean_name(customer_name)
+        agent_name = self._clean_name(agent_name)
         
         return business_name, customer_name, agent_name
+    
+    def _is_valid_business_name(self, name: str) -> bool:
+        """Validate if extracted name is a valid business name"""
+        if not name or len(name.strip()) < 3:
+            return False
+        
+        name_lower = name.lower().strip()
+        
+        # Invalid business names (including StoreHub variations)
+        invalid_names = [
+            'storehub', 'store', 'hub', 'calling', 'speaking', 'the', 'from',
+            'account', 'manager', 'representative', 'customer', 'service',
+            'support', 'team', 'hello', 'good', 'morning', 'afternoon',
+            'evening', 'thank', 'thanks', 'you', 'yes', 'no', 'okay',
+            'sure', 'please', 'sorry', 'help', 'assistance'
+        ]
+        
+        # Check if it's an invalid name
+        if name_lower in invalid_names:
+            return False
+        
+        # Check if it contains only invalid words
+        words = name_lower.split()
+        if all(word in invalid_names for word in words):
+            return False
+        
+        # Must contain at least one alphabetic character
+        if not any(c.isalpha() for c in name):
+            return False
+        
+        return True
+    
+    def _clean_name(self, name: str) -> str:
+        """Clean and format extracted name"""
+        if not name or name == "Not identified":
+            return "Not identified"
+        
+        # Remove extra whitespace and capitalize properly
+        cleaned = ' '.join(name.split()).title()
+        
+        # Remove common prefixes/suffixes
+        prefixes_to_remove = ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Sir', 'Madam']
+        for prefix in prefixes_to_remove:
+            if cleaned.startswith(prefix + ' '):
+                cleaned = cleaned[len(prefix):].strip()
+        
+        return cleaned if cleaned else "Not identified"
     
     async def analyze_conversation(self, transcript: str) -> Dict[str, Any]:
         business_name, customer_name, agent_name = self._extract_names(transcript)
